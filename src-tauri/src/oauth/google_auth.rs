@@ -1,4 +1,4 @@
-use std::env;
+use std::sync::Mutex;
 
 use oauth2::basic::{BasicClient, BasicErrorResponseType, BasicTokenType};
 use oauth2::{
@@ -8,7 +8,8 @@ use oauth2::{
     StandardTokenResponse, TokenResponse, TokenUrl,
 };
 
-use tauri::Runtime;
+use rusqlite::config;
+use tauri::{AppHandle, Runtime};
 use tauri_plugin_http::reqwest;
 use tauri_plugin_opener::OpenerExt;
 use url::Url;
@@ -139,47 +140,55 @@ async fn save_google_oauth(
 }
 
 #[tauri::command]
-pub async fn start_google_oauth<R: Runtime>(
-    app: tauri::AppHandle<R>,
+pub async fn start_google_oauth(
+    app: tauri::AppHandle,
     oauth_db: tauri::State<'_, OAuthDatabaseManger>,
-) -> Result<(), String> {
+    http_client: tauri::State<'_, reqwest::Client>,
+    config: tauri::State<'_, Mutex<crate::utils::config::Config>>,
+) -> Result<String, bool> {
     println!("Starting Google OAuth flow...");
     let port = get_available_ports();
     let redirect_url = get_oauth_redirect_url(port, OAuthEmailProvider::Google);
 
-    let client = create_google_oauth_client(&redirect_url)?;
+    let client = create_google_oauth_client(&redirect_url).map_err(|e| {
+        eprintln!("Failed to create Google OAuth client: {}", e);
+        false
+    })?;
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
     let (authorize_url, _csrf_token) = build_authorize_url(&client, pkce_challenge);
 
     let _ = app.opener().open_path(authorize_url, None::<&str>);
 
-    let params = temp_oauth_callback_server(port, OAuthEmailProvider::Google)
-        .map_err(|e| format!("Failed to get OAuth params: {}", e))?;
+    let params =
+        temp_oauth_callback_server(port, OAuthEmailProvider::Google).map_err(|_e| false)?;
 
-    let google_params = extract_google_oauth_params(&params)?;
-
-    let http_client = reqwest::ClientBuilder::new()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .expect("Failed to create HTTP client");
+    let google_params = extract_google_oauth_params(&params).map_err(|e| {
+        eprintln!("Failed to extract Google OAuth params: {}", e);
+        false
+    })?;
 
     let token_response_result = client
         .exchange_code(AuthorizationCode::new(google_params.code))
         .set_pkce_verifier(pkce_verifier)
-        .request_async(&http_client)
+        .request_async(&*http_client)
         .await;
 
     println!("Received OAuth params: {:#?}", token_response_result);
 
     match token_response_result {
         Ok(response) => {
-            println!(
-                "Token exchange successful. Access Token: {}",
-                response.access_token().secret()
-            );
-            let _ = save_google_oauth(response, &oauth_db).await;
-            Ok(())
+            let profile = crate::email_provider::google::get_google_user_profile(
+                &response.access_token().secret(),
+                http_client,
+            )
+            .await;
+            println!("Google User Profile: {:#?}", profile);
+            let _ = save_google_oauth(response.clone(), &oauth_db).await;
+            let mut config = config.lock().unwrap();
+            config.set_has_account(&app);
+
+            Ok(serde_json::to_string(&profile)
+                .unwrap_or_else(|_| "Failed to serialize token response".to_string()))
         }
         Err(e) => {
             eprintln!("Error during token exchange: {:#?}", e);
@@ -195,10 +204,7 @@ pub async fn start_google_oauth<R: Runtime>(
             } else {
                 eprintln!("An unclassified OAuth error occurred during token exchange.");
             }
-            Err(format!(
-                "Token exchange failed. Check application logs for details. Error: {}",
-                e
-            ))
+            Err(false)
         }
     }
 }

@@ -1,8 +1,22 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
 
+  interface AppConfig {
+    has_account: boolean;
+  }
+
   let name = $state("");
   let greetMsg = $state("");
+
+  let profile = $state<string | null>(null);
+
+  let config = $state<AppConfig | null>(null);
+
+  async function onLoad() {
+    const appconfig: string = await invoke("get_config");
+    console.log("Config loaded:", appconfig);
+    config = JSON.parse(appconfig);
+  }
 
   async function greet(event: Event) {
     event.preventDefault();
@@ -12,8 +26,13 @@
 
   function googleLogin() {
     console.log("Google login clicked");
-    invoke("start_google_oauth");
+    let result = invoke<string>("start_google_oauth");
+    result.then((data) => {
+      profile = data;
+      onLoad();
+    });
   }
+  onLoad();
 </script>
 
 <main class="container">
@@ -40,6 +59,19 @@
   <div>
     <button onclick={googleLogin}> Google Login </button>
   </div>
+  {#if profile}
+    <p>Profile loaded successfully!</p>
+    <div>
+      Profile
+      <p>{profile}</p>
+    </div>
+  {/if}
+  {#if config}
+    <p>Config loaded successfully!</p>
+    <div>
+      <p>Has Account: {config.has_account ? "Yes" : "No"}</p>
+    </div>
+  {/if}
 </main>
 
 <style>

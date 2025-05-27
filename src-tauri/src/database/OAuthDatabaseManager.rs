@@ -19,7 +19,7 @@ pub struct OAuthDatabaseManger {
 }
 
 impl OAuthDatabaseManger {
-    pub fn new(app_handle: tauri::AppHandle) -> Self {
+    pub fn new(app_handle: &tauri::AppHandle) -> Self {
         let app_data_dir = app_handle
             .path()
             .app_data_dir()
