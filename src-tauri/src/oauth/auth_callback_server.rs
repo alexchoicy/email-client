@@ -4,6 +4,7 @@ use url::Url;
 
 const OAUTH_SERVER_IP: &str = "127.0.0.1";
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OAuthEmailProvider {
     Google,
     Microsoft,
@@ -14,6 +15,13 @@ impl OAuthEmailProvider {
         match self {
             OAuthEmailProvider::Google => "google",
             OAuthEmailProvider::Microsoft => "microsoft",
+        }
+    }
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "google" => OAuthEmailProvider::Google,
+            "microsoft" => OAuthEmailProvider::Microsoft,
+            _ => panic!("Unknown OAuthEmailProvider: {}", s),
         }
     }
 }

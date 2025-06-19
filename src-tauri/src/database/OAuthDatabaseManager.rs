@@ -70,4 +70,47 @@ impl OAuthDatabaseManger {
 
         Ok(())
     }
+
+    pub async fn update_access_token(
+        &self,
+        identifier: &str,
+        new_access_token: &str,
+    ) -> Result<(), String> {
+        let conn = self.db.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE oauth_tokens SET access_token = ? WHERE IDENTIFIER = ?",
+            rusqlite::params![new_access_token, identifier],
+        )
+        .map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+
+    pub async fn get_toke_data(&self) -> Result<Vec<OAuthTokenData>, String> {
+        let conn = self.db.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT IDENTIFIER, email, access_token, refresh_token, expires_at, token_type, email_provider FROM oauth_tokens")
+            .map_err(|e| e.to_string())?;
+
+        let token_data_iter = stmt
+            .query_map([], |row| {
+                Ok(OAuthTokenData {
+                    identifier: row.get(0)?,
+                    email: row.get(1)?,
+                    access_token: row.get(2)?,
+                    refresh_token: row.get(3)?,
+                    expires_at: row.get(4)?,
+                    token_type: row.get(5)?,
+                    email_provider: OAuthEmailProvider::from_str(row.get::<_, String>(6)?.as_str()),
+                })
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut token_data = Vec::new();
+        for data in token_data_iter {
+            token_data.push(data.map_err(|e| e.to_string())?);
+        }
+
+        Ok(token_data)
+    }
 }

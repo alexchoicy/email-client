@@ -8,14 +8,13 @@ use oauth2::{
     StandardTokenResponse, TokenResponse, TokenUrl,
 };
 
-use rusqlite::config;
-use tauri::{AppHandle, Runtime};
+use crate::database::OAuthDatabaseManager::{OAuthDatabaseManger, OAuthTokenData};
+use crate::email_provider::google::init_new_google_account;
+use crate::email_provider::google_types::GoogleProfile;
+use crate::oauth::auth_callback_server::temp_oauth_callback_server;
 use tauri_plugin_http::reqwest;
 use tauri_plugin_opener::OpenerExt;
 use url::Url;
-
-use crate::database::OAuthDatabaseManager::{OAuthDatabaseManger, OAuthTokenData};
-use crate::oauth::auth_callback_server::temp_oauth_callback_server;
 
 use super::auth_callback_server::{
     get_available_ports, get_oauth_redirect_url, OAuthEmailProvider,
@@ -107,12 +106,13 @@ fn build_authorize_url(client: &Client, pkce_challenge: PkceCodeChallenge) -> (U
 type TokenResponseContent = StandardTokenResponse<EmptyExtraTokenFields, BasicTokenType>;
 
 async fn save_google_oauth(
-    token_response: TokenResponseContent,
+    token_response: &TokenResponseContent,
+    profile: &GoogleProfile,
     oauth_db: &OAuthDatabaseManger,
 ) -> Result<(), String> {
     let data = OAuthTokenData {
-        identifier: token_response.access_token().secret().to_string(),
-        email: "test".to_string(),
+        identifier: profile.sub.to_string(),
+        email: profile.email.to_string(),
         access_token: token_response.access_token().secret().to_string(),
         refresh_token: token_response
             .refresh_token()
@@ -120,7 +120,14 @@ async fn save_google_oauth(
             .unwrap_or_default(),
         expires_at: token_response
             .expires_in()
-            .map(|d| d.as_secs() as i64)
+            .map(|duration| {
+                let now = std::time::SystemTime::now();
+                let expires_at = now + duration;
+                expires_at
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0)
+            })
             .unwrap_or(0),
         token_type: "Bearer".to_string(),
         email_provider: OAuthEmailProvider::Google,
@@ -137,6 +144,13 @@ async fn save_google_oauth(
             eprintln!("Failed to save Google OAuth token data: {}", e);
             e.to_string()
         })
+}
+
+async fn refresh_google_oauth(
+    oauth_db: tauri::State<'_, OAuthDatabaseManger>,
+    http_client: tauri::State<'_, reqwest::Client>,
+    config: tauri::State<'_, Mutex<crate::utils::config::Config>>,
+) {
 }
 
 #[tauri::command]
@@ -179,13 +193,20 @@ pub async fn start_google_oauth(
         Ok(response) => {
             let profile = crate::email_provider::google::get_google_user_profile(
                 &response.access_token().secret(),
-                http_client,
+                &http_client,
             )
-            .await;
+            .await
+            .map_err(|e| {
+                eprintln!("Failed to fetch Google user profile: {}", e);
+                false
+            })?;
             println!("Google User Profile: {:#?}", profile);
-            let _ = save_google_oauth(response.clone(), &oauth_db).await;
-            let mut config = config.lock().unwrap();
-            config.set_has_account(&app);
+            let _ = save_google_oauth(&response, &profile, &oauth_db).await;
+
+            let _ = init_new_google_account(&http_client, &response.access_token().secret()).await;
+
+            let mut config_guard = config.lock().unwrap();
+            config_guard.set_has_account(&app);
 
             Ok(serde_json::to_string(&profile)
                 .unwrap_or_else(|_| "Failed to serialize token response".to_string()))

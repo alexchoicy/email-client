@@ -11,11 +11,22 @@
   let profile = $state<string | null>(null);
 
   let config = $state<AppConfig | null>(null);
+  let history = $state<any[] | null>(null);
 
   async function onLoad() {
     const appconfig: string = await invoke("get_config");
     console.log("Config loaded:", appconfig);
     config = JSON.parse(appconfig);
+
+    if (config?.has_account) {
+      try {
+        const historyData: string = await invoke("get_history");
+        history = JSON.parse(historyData);
+        console.log("History loaded:", history);
+      } catch (error) {
+        console.error("Failed to load history:", error);
+      }
+    }
   }
 
   async function greet(event: Event) {
@@ -72,9 +83,17 @@
       <p>Has Account: {config.has_account ? "Yes" : "No"}</p>
     </div>
   {/if}
+
+  {#if config?.has_account && history}
+    <h3>Account History</h3>
+    {#each history as item}
+      <p>{item}</p>
+    {/each}
+  {/if}
 </main>
 
 <style>
+  /* Your existing styles */
   .logo.vite:hover {
     filter: drop-shadow(0 0 2em #747bff);
   }
