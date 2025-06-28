@@ -15,6 +15,7 @@ use crate::oauth::auth_callback_server::temp_oauth_callback_server;
 use tauri_plugin_http::reqwest;
 use tauri_plugin_opener::OpenerExt;
 use url::Url;
+use dotenvy_macro::dotenv;
 
 use super::auth_callback_server::{
     get_available_ports, get_oauth_redirect_url, OAuthEmailProvider,
@@ -43,10 +44,10 @@ struct GoogleOAuthParams {
 }
 
 fn create_google_oauth_client(redirect_url: &str) -> Result<Client, String> {
-    let client_id = dotenvy_macro::dotenv!("GOOGLE_CLIENT_ID").to_string();
-    let auth_url = dotenvy_macro::dotenv!("GOOGLE_AUTH_URL").to_string();
-    let token_url = dotenvy_macro::dotenv!("GOOGLE_TOKEN_URL").to_string();
-    let client_secret = dotenvy_macro::dotenv!("GOOGLE_CLIENT_SECRET").to_string();
+    let client_id = dotenv!("GOOGLE_CLIENT_ID").to_string();
+    let auth_url = dotenv!("GOOGLE_AUTH_URL").to_string();
+    let token_url = dotenv!("GOOGLE_TOKEN_URL").to_string();
+    let client_secret = dotenv!("GOOGLE_CLIENT_SECRET").to_string();
 
     let client = BasicClient::new(ClientId::new(client_id))
         .set_auth_uri(AuthUrl::new(auth_url).map_err(|_| "Invalid GOOGLE_AUTH_URL".to_string())?)
