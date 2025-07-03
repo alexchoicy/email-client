@@ -12,7 +12,11 @@
 
   let config = $state<AppConfig | null>(null);
   let history = $state<any[] | null>(null);
+  import SunIcon from "@lucide/svelte/icons/sun";
+  import MoonIcon from "@lucide/svelte/icons/moon";
 
+  import { toggleMode } from "mode-watcher";
+  import { Button } from "$lib/components/ui/button/index.js";
   async function onLoad() {
     const appconfig: string = await invoke("get_config");
     console.log("Config loaded:", appconfig);
@@ -61,7 +65,15 @@
     </a>
   </div>
   <p>Click on the Tauri, Vite, and SvelteKit logos to learn more.</p>
-
+  <Button onclick={toggleMode} variant="outline" size="icon">
+    <SunIcon
+      class="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 !transition-all dark:-rotate-90 dark:scale-0"
+    />
+    <MoonIcon
+      class="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 !transition-all dark:rotate-0 dark:scale-100"
+    />
+    <span class="sr-only">Toggle theme</span>
+  </Button>
   <form class="row" onsubmit={greet}>
     <input id="greet-input" placeholder="Enter a name..." bind:value={name} />
     <button type="submit">Greet</button>
